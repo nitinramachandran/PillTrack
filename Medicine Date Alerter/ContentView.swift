@@ -1,10 +1,8 @@
+import PhotosUI
 import SwiftUI
 import UniformTypeIdentifiers
 
 /// The main screen of the app.
-///
-/// In SwiftUI, a `View` is similar to a React component: it owns state and declares
-/// what should appear on screen for that current state.
 struct ContentView: View {
     @State private var store: MedicineStore
     @State private var medicineName = ""
@@ -21,6 +19,11 @@ struct ContentView: View {
     @State private var medicineEditDraft: MedicineEditDraft?
     @State private var savedConfirmation: Medicine?
     @State private var showingSavedMedicines = false
+    @State private var pendingPhotoData: Data?
+    @State private var showingPhotoOptions = false
+    @State private var showingCameraCapture = false
+    @State private var showingPhotoLibrary = false
+    @State private var photoPickerItem: PhotosPickerItem?
     @State private var showingBackupImporter = false
     @State private var pendingImportData: Data?
     @State private var backupMessage: String?
@@ -63,9 +66,6 @@ struct ContentView: View {
         _store = State(initialValue: store)
     }
 
-    /// Declares the full user interface for this screen.
-    ///
-    /// SwiftUI recalculates `body` whenever `@State` changes, then updates the screen.
     var body: some View {
         NavigationStack {
             Form {
@@ -97,6 +97,8 @@ struct ContentView: View {
                         .disabled(medicineName.isEmpty)
                         .accessibilityIdentifier("clearMedicineNameButton")
                     }
+
+                    photoAttachmentRow
 
                     dateEntryRow
 
@@ -235,6 +237,23 @@ struct ContentView: View {
                         .transition(.opacity.combined(with: .scale(scale: 0.92)))
                 }
             }
+            .sheet(isPresented: $showingCameraCapture) {
+                CameraPhotoPicker(
+                    onCapture: { data in
+                        pendingPhotoData = data
+                    },
+                    onClose: { showingCameraCapture = false }
+                )
+                .ignoresSafeArea()
+            }
+            .photosPicker(
+                isPresented: $showingPhotoLibrary,
+                selection: $photoPickerItem,
+                matching: .all(of: [.images, .not(.livePhotos)])
+            )
+            .onChange(of: photoPickerItem) { _, newItem in
+                loadPickedPhoto(newItem)
+            }
             .fileImporter(
                 isPresented: $showingBackupImporter,
                 allowedContentTypes: [.json]
@@ -258,9 +277,6 @@ struct ContentView: View {
     }
 
     /// Waits for notification-tap events from `AppNotificationDelegate`.
-    ///
-    /// `for await` is Swift's async-loop syntax. It keeps listening while this view is
-    /// on screen and updates state when the user taps an expiry notification.
     private func listenForNotificationTaps() async {
         if let pendingMedicineID = MedicineNotificationRoute.consumePendingMedicineID() {
             openNotificationMedicineDetails(for: pendingMedicineID)
@@ -670,6 +686,74 @@ struct ContentView: View {
         }
     }
 
+    /// The attached photo as a preview image, or `nil` when none is attached yet.
+    private var pendingPhotoPreview: UIImage? {
+        pendingPhotoData.flatMap(UIImage.init(data:))
+    }
+
+    /// Row for attaching one photo of the medicine before saving.
+    ///
+    /// Shows a small preview once attached. The button opens a chooser offering the
+    /// camera (still photos only — never Live Photos) and the photo library.
+    private var photoAttachmentRow: some View {
+        HStack(spacing: 12) {
+            if let preview = pendingPhotoPreview {
+                Image(uiImage: preview)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 52, height: 52)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(PillEyePalette.mint, lineWidth: 1.5)
+                    }
+                    .accessibilityLabel("Attached medicine photo")
+            }
+
+            Button {
+                showingPhotoOptions = true
+            } label: {
+                Label(
+                    pendingPhotoData == nil ? "Add photo" : "Change photo",
+                    systemImage: pendingPhotoData == nil ? "photo.badge.plus" : "photo"
+                )
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(DimensionalButtonStyle(fill: PillEyePalette.teal, prominence: .secondary))
+            .accessibilityIdentifier("addPhotoButton")
+
+            if pendingPhotoData != nil {
+                Button("Remove") {
+                    pendingPhotoData = nil
+                }
+                .buttonStyle(DimensionalButtonStyle(fill: PillEyePalette.coral, prominence: .secondary))
+                .accessibilityIdentifier("removePhotoButton")
+            }
+        }
+        .confirmationDialog("Medicine photo", isPresented: $showingPhotoOptions) {
+            if CameraPhotoPicker.isCameraAvailable {
+                Button("Take Photo") {
+                    showingCameraCapture = true
+                }
+            }
+            Button("Choose From Library") {
+                showingPhotoLibrary = true
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+    }
+
+    /// Loads the picked library item as still-image data for the form preview.
+    private func loadPickedPhoto(_ item: PhotosPickerItem?) {
+        guard let item else { return }
+        Task {
+            if let data = try? await item.loadTransferable(type: Data.self) {
+                pendingPhotoData = data
+            }
+            photoPickerItem = nil
+        }
+    }
+
     /// The date currently targeted by the dropdown (manufacturing or expiry).
     private var activeDateValue: Date? {
         switch activeDateField {
@@ -796,7 +880,8 @@ struct ContentView: View {
                 name: medicineName,
                 manufacturingDate: manufacturingDate,
                 expiryDate: expiryDate,
-                reminderLeadDays: reminderLeadDays
+                reminderLeadDays: reminderLeadDays,
+                photoData: pendingPhotoData
             )
             resetForm()
             showSaveConfirmation(for: medicine)
@@ -829,6 +914,7 @@ struct ContentView: View {
         medicineName = ""
         manufacturingDate = nil
         expiryDate = nil
+        pendingPhotoData = nil
     }
 
     /// Receives the user's confirmed text selection from the scanner.

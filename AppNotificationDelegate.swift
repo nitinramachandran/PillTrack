@@ -9,10 +9,7 @@ import UserNotifications
 final class AppNotificationDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
     private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "PillEye", category: "Notifications")
 
-    /// Runs when iOS finishes launching the app.
-    ///
-    /// This is where we attach this object as the notification delegate and register
-    /// the notification actions before any reminders are delivered.
+    /// Attaches the notification delegate and registers actions before any reminders fire.
     func application(
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil

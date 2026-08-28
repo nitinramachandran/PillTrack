@@ -1,10 +1,6 @@
 import Foundation
 
 /// The main data object for the app.
-///
-/// This is similar to a Java/TypeScript model class or a Python dataclass.
-/// `Identifiable` lets SwiftUI use this object in lists, `Codable` lets us convert it
-/// to and from JSON, and `Hashable` lets Swift compare/store it efficiently.
 nonisolated struct Medicine: Identifiable, Codable, Hashable {
     let id: UUID
     var name: String
@@ -14,9 +10,6 @@ nonisolated struct Medicine: Identifiable, Codable, Hashable {
     let createdAt: Date
 
     /// Creates a new medicine record.
-    ///
-    /// Parameters with `= ...` are default values, similar to optional/default
-    /// parameters in Python or JavaScript. Callers can pass only the fields they need.
     init(
         id: UUID = UUID(),
         name: String,
@@ -50,10 +43,7 @@ nonisolated struct Medicine: Identifiable, Codable, Hashable {
         createdAt = try container.decode(Date.self, forKey: .createdAt)
     }
 
-    /// The date when the app should remind the user.
-    ///
-    /// This is a computed property: it behaves like a field, but Swift calculates it
-    /// each time it is read. The reminder fires `reminderLeadDays` before expiry.
+    /// Fires `reminderLeadDays` before expiry.
     var reminderDate: Date {
         Calendar.current.date(byAdding: .day, value: -reminderLeadDays, to: expiryDate) ?? expiryDate
     }
@@ -97,9 +87,6 @@ nonisolated struct Medicine: Identifiable, Codable, Hashable {
 }
 
 /// Describes editable changes to an existing medicine.
-///
-/// Today the UI only changes `reminderLeadDays`, but this struct already has fields for
-/// name and dates so future edit screens can reuse the same store update function.
 nonisolated struct MedicineUpdate {
     var name: String?
     var manufacturingDate: Date?
@@ -108,9 +95,6 @@ nonisolated struct MedicineUpdate {
 }
 
 /// All validation failures that can happen while saving a medicine.
-///
-/// `LocalizedError` lets each error provide a user-readable message through
-/// `localizedDescription`, similar to storing an error message in an exception.
 nonisolated enum MedicineValidationError: Error, Equatable, LocalizedError {
     case missingName
     case expiryNotAfterManufacturing
@@ -129,15 +113,9 @@ nonisolated enum MedicineValidationError: Error, Equatable, LocalizedError {
     }
 }
 
-/// Holds validation rules for medicine records.
-///
-/// This is an `enum` with only static functions, which is a common Swift way to
-/// group utility functions without allowing anyone to create an instance.
+/// Validates medicine form values before saving.
 nonisolated enum MedicineValidator {
-    /// Checks that the form values are valid before saving.
-    ///
-    /// `throws` means this function can fail by throwing an error, similar to Java
-    /// exceptions. Callers must use `try` and handle the error.
+    /// Checks that name is non-empty and expiry is after manufacturing.
     static func validate(name: String, manufacturingDate: Date, expiryDate: Date) throws {
         if name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             throw MedicineValidationError.missingName

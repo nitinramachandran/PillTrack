@@ -7,9 +7,6 @@ import Foundation
 nonisolated struct MedicineDateParser {
     /// Regular expression for dates like `05/2026`, `05-2026`, `01/05/2026`, or `01-05-26`.
     ///
-    /// The `#"..."#` syntax is a Swift raw string. It avoids needing to double-escape
-    /// many regex backslashes, which is similar to Python raw strings like `r"..."`.
-    ///
     /// The day/month/year alternative must come first: regex alternation is ordered,
     /// so with month/year first, `01/05/2026` would match as just `01/05` and the full
     /// date could never be recognized.

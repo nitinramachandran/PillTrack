@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import UIKit
 @testable import Medicine_Date_Alerter
 
 /// Unit tests for the non-UI app logic.
@@ -325,6 +326,96 @@ struct Medicine_Date_AlerterTests {
         #expect(!MedicineFilter.expiring.includes(farOut, now: now))
     }
 
+    /// Verifies image processing downscales large photos and shrinks their file size.
+    ///
+    /// A 3000×2000 source must come back at most 1280 px on its long edge and strictly
+    /// smaller than the original JPEG, since that is the entire point of processing.
+    @Test func imageProcessorDownscalesAndCompressesLargePhotos() throws {
+        let size = CGSize(width: 3000, height: 2000)
+        let original = UIGraphicsImageRenderer(size: size).image { context in
+            UIColor.systemTeal.setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+            UIColor.systemRed.setFill()
+            context.fill(CGRect(x: 200, y: 200, width: 1200, height: 900))
+        }
+        let originalData = try #require(original.jpegData(compressionQuality: 1.0))
+
+        let processedData = try #require(
+            MedicineImageProcessor.downsampledJPEGData(from: originalData, maxPixelSize: 1280)
+        )
+        let processed = try #require(UIImage(data: processedData))
+
+        #expect(max(processed.size.width, processed.size.height) <= 1280)
+        #expect(processedData.count < originalData.count)
+    }
+
+    /// Verifies the medicine's photo is stored on save and removed again on delete.
+    @Test @MainActor func storeSavesAndDeletesMedicinePhoto() async throws {
+        let imageStore = SpyImageStore()
+        let store = MedicineStore(notificationScheduler: SpyNotificationScheduler(), imageStore: imageStore)
+        let manufacturing = try #require(makeDate(year: 2026, month: 5, day: 1))
+        let expiry = try #require(makeDate(year: 2027, month: 5, day: 1))
+        let photoData = Data([0xFF, 0xD8, 0xFF])
+
+        let medicine = try await store.save(
+            name: "Cetirizine",
+            manufacturingDate: manufacturing,
+            expiryDate: expiry,
+            photoData: photoData
+        )
+        #expect(imageStore.savedImageIDs == [medicine.id])
+
+        try await store.delete(medicine)
+        #expect(imageStore.deletedImageIDs == [medicine.id])
+    }
+
+    /// Verifies a photo can be attached to an already-saved medicine, and that doing so
+    /// bumps the observable photo version so list thumbnails refresh.
+    @Test @MainActor func storeAttachesPhotoToExistingMedicine() async throws {
+        let imageStore = SpyImageStore()
+        let store = MedicineStore(notificationScheduler: SpyNotificationScheduler(), imageStore: imageStore)
+        let manufacturing = try #require(makeDate(year: 2026, month: 5, day: 1))
+        let expiry = try #require(makeDate(year: 2027, month: 5, day: 1))
+
+        let medicine = try await store.save(
+            name: "Cetirizine", manufacturingDate: manufacturing, expiryDate: expiry
+        )
+        #expect(imageStore.savedImageIDs.isEmpty)
+        let versionBefore = store.photoVersion
+
+        try await store.attachPhoto(Data([0xFF]), to: medicine)
+
+        #expect(imageStore.savedImageIDs == [medicine.id])
+        #expect(store.photoVersion == versionBefore + 1)
+    }
+
+    /// Verifies importing a backup removes images only for medicines that disappear.
+    ///
+    /// Restoring a backup on the same device keeps images for medicines whose IDs are
+    /// still present, while images for replaced medicines are cleaned up.
+    @Test @MainActor func importDeletesImagesOnlyForRemovedMedicines() async throws {
+        let imageStore = SpyImageStore()
+        let store = MedicineStore(notificationScheduler: SpyNotificationScheduler(), imageStore: imageStore)
+        let manufacturing = try #require(makeDate(year: 2026, month: 5, day: 1))
+        let expiry = try #require(makeDate(year: 2027, month: 5, day: 1))
+
+        let kept = try await store.save(
+            name: "Kept", manufacturingDate: manufacturing, expiryDate: expiry, photoData: Data([1])
+        )
+        let replaced = try await store.save(
+            name: "Replaced", manufacturingDate: manufacturing, expiryDate: expiry, photoData: Data([2])
+        )
+
+        // A backup containing only the kept medicine.
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let backup = try encoder.encode([kept])
+        try await store.importData(backup)
+
+        #expect(store.medicines.map(\.id) == [kept.id])
+        #expect(imageStore.deletedImageIDs == [replaced.id])
+    }
+
     /// Verifies data saved before version 1.2 (no reminderLeadDays field) still decodes,
     /// falling back to the original one-day lead. This protects old backups and upgrades.
     @Test func legacyBackupWithoutLeadDaysDecodesWithOneDayDefault() throws {
@@ -362,6 +453,26 @@ private func temporaryStorageURL() -> URL {
     FileManager.default.temporaryDirectory
         .appendingPathComponent(UUID().uuidString, isDirectory: true)
         .appendingPathComponent("medicines.json")
+}
+
+/// Fake image store used by tests.
+///
+/// Records which medicine IDs had images saved or deleted, without touching the disk.
+@MainActor
+private final class SpyImageStore: MedicineImageStoring {
+    var savedImageIDs: [UUID] = []
+    var deletedImageIDs: [UUID] = []
+
+    func saveImage(_ data: Data, for medicineID: UUID) async throws {
+        savedImageIDs.append(medicineID)
+    }
+
+    func deleteImage(for medicineID: UUID) async {
+        deletedImageIDs.append(medicineID)
+    }
+
+    nonisolated func imageURL(for medicineID: UUID) -> URL? { nil }
+    nonisolated func thumbnailURL(for medicineID: UUID) -> URL? { nil }
 }
 
 /// Fake notification scheduler used by tests.

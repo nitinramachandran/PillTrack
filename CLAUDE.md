@@ -49,6 +49,9 @@ See `specs/001-medicine-expiry-tracker/` for the worked example covering the cur
   elements stable `accessibilityIdentifier`s.
 
 ## Recent Changes
+- 004-medicine-photo-attachment: attach a photo (camera/library, no Live Photos) before saving;
+  ImageIO-downsampled JPEGs (1280 px + 240 px thumb) in sandbox with file protection; list
+  thumbnails expand on tap; images deleted with their medicine.
 - Code cleanup (2026-08-26): `nonisolated` convention for pure types, one shared date-order
   validation helper in ContentView, modern SF Symbol names, tests for the 60-day expiring window.
 - 002-compact-dates-saved-popup: single-row date entry (Mfg/Expiry dropdown) and a filtered

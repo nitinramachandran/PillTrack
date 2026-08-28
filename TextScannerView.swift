@@ -417,10 +417,7 @@ struct TextScannerView: View {
     }
 }
 
-/// SwiftUI wrapper around the UIKit camera scanner.
-///
-/// `DataScannerViewController` is a UIKit view controller, not a native SwiftUI view.
-/// `UIViewControllerRepresentable` is the bridge that lets SwiftUI display UIKit screens.
+/// SwiftUI wrapper around `DataScannerViewController`.
 private struct ScannerCameraView: UIViewControllerRepresentable {
     let isTorchOn: Bool
     let onTextTapped: (String) -> Void
@@ -441,9 +438,6 @@ private struct ScannerCameraView: UIViewControllerRepresentable {
         (uiViewController as? ScannerHostViewController)?.setTorch(enabled: isTorchOn)
     }
 
-    /// Creates the coordinator object that receives callbacks from VisionKit.
-    ///
-    /// A coordinator is similar to an adapter/listener object in Java UI frameworks.
     /// When word taps are enabled, whole-line taps are suppressed so a single tap does
     /// not capture both the tapped word and the full recognized line.
     func makeCoordinator() -> Coordinator {
@@ -500,9 +494,7 @@ private final class ScannerHostViewController: UIViewController {
         super.init(nibName: nil, bundle: nil)
     }
 
-    /// Required by UIKit for storyboard-based creation.
-    ///
-    /// This app creates the controller in code, so this initializer should never run.
+    /// Not used — this controller is created in code, never from a storyboard.
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
@@ -511,9 +503,6 @@ private final class ScannerHostViewController: UIViewController {
         recognizedItemsTask?.cancel()
     }
 
-    /// Runs after UIKit has loaded the controller's root view.
-    ///
-    /// We use it to show an initial message and then start the camera-permission checks.
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
@@ -686,7 +675,7 @@ private final class ScannerHostViewController: UIViewController {
                 y: corners.map(\.y).reduce(0, +) / 4
             )
             let distance = hypot(point.x - center.x, point.y - center.y)
-            if best == nil || distance < best!.distance {
+            if best.map({ distance < $0.distance }) ?? true {
                 best = (text, fractionAlongLine(of: point, in: bounds), distance)
             }
         }
@@ -788,7 +777,7 @@ private final class ScannerHostViewController: UIViewController {
             }
 
             let distance = abs(fraction - (start + end) / 2)
-            if nearest == nil || distance < nearest!.distance {
+            if nearest.map({ distance < $0.distance }) ?? true {
                 nearest = (token, distance)
             }
         }

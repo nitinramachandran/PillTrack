@@ -4,18 +4,21 @@ import Observation
 import UniformTypeIdentifiers
 
 /// Storage for medicines shown by the app.
-///
-/// This plays the role of a small repository/service object. It keeps the medicines in
-/// memory for fast UI updates and also writes them to a JSON file inside the app's own
-/// sandbox. iOS deletes that sandbox automatically when the user deletes the app.
 @MainActor
 @Observable
 final class MedicineStore {
-    /// `private(set)` means other files can read `medicines`, but only this class can modify it.
     private(set) var medicines: [Medicine] = []
+
+    /// Bumped whenever a photo changes without the medicine list itself changing.
+    ///
+    /// Photos live on disk keyed by medicine ID, so attaching one to an existing medicine
+    /// does not mutate `medicines`. Views that show photos read this property so the
+    /// Observation framework re-renders them after the change.
+    private(set) var photoVersion = 0
 
     private let notificationScheduler: NotificationScheduling
     private let storageURL: URL?
+    private let imageStore: MedicineImageStoring
 
     /// Creates the store used by the real app, wired to iOS local notifications and disk storage.
     ///
@@ -24,6 +27,7 @@ final class MedicineStore {
     init() {
         self.notificationScheduler = LocalNotificationScheduler()
         self.storageURL = Self.defaultStorageURL()
+        self.imageStore = MedicineImageStore()
     }
 
     /// Loads saved medicines from disk on a background thread.
@@ -45,12 +49,16 @@ final class MedicineStore {
 
     /// Creates the store with a custom scheduler.
     ///
-    /// Tests and SwiftUI previews use this to pass fake schedulers, similar to dependency
-    /// injection in Java/Spring or passing mocks in JS/Python tests. Passing `nil` for
-    /// `storageURL` keeps the store memory-only, which avoids tests touching real app data.
-    init(notificationScheduler: NotificationScheduling, storageURL: URL? = nil) {
+    /// Passing `nil` for `storageURL` keeps the store memory-only, which avoids tests
+    /// touching real app data.
+    init(
+        notificationScheduler: NotificationScheduling,
+        storageURL: URL? = nil,
+        imageStore: MedicineImageStoring = NullMedicineImageStore()
+    ) {
         self.notificationScheduler = notificationScheduler
         self.storageURL = storageURL
+        self.imageStore = imageStore
 
         if storageURL != nil {
             loadFromDisk()
@@ -60,14 +68,16 @@ final class MedicineStore {
     /// Validates, stores, persists, and schedules a reminder for a medicine.
     ///
     /// Saving an exact duplicate (same name and same calendar dates) is rejected with
-    /// `MedicineValidationError.duplicateMedicine`. Returns the saved medicine so the UI
-    /// can show a confirmation with the stored (normalized) values.
+    /// `MedicineValidationError.duplicateMedicine`. An optional photo is processed and
+    /// stored alongside the record. Returns the saved medicine so the UI can show a
+    /// confirmation with the stored (normalized) values.
     @discardableResult
     func save(
         name: String,
         manufacturingDate: Date,
         expiryDate: Date,
-        reminderLeadDays: Int = 1
+        reminderLeadDays: Int = 1,
+        photoData: Data? = nil
     ) async throws -> Medicine {
         try MedicineValidator.validate(
             name: name,
@@ -88,10 +98,30 @@ final class MedicineStore {
             reminderLeadDays: reminderLeadDays
         )
 
+        if let photoData {
+            try await imageStore.saveImage(photoData, for: medicine.id)
+        }
+
         try await notificationScheduler.scheduleExpiryReminder(for: medicine)
         medicines.insert(medicine, at: 0)
         try persistToDisk()
         return medicine
+    }
+
+    /// Attaches (or replaces) the stored photo for an already-saved medicine.
+    func attachPhoto(_ data: Data, to medicine: Medicine) async throws {
+        try await imageStore.saveImage(data, for: medicine.id)
+        photoVersion += 1
+    }
+
+    /// The stored full-size photo for a medicine, or `nil` when it has none.
+    func imageURL(for medicine: Medicine) -> URL? {
+        imageStore.imageURL(for: medicine.id)
+    }
+
+    /// The stored thumbnail for a medicine, or `nil` when it has none.
+    func thumbnailURL(for medicine: Medicine) -> URL? {
+        imageStore.thumbnailURL(for: medicine.id)
     }
 
     /// Applies changes to an existing medicine, saves them to disk, and refreshes its reminder.
@@ -127,7 +157,8 @@ final class MedicineStore {
         try await notificationScheduler.scheduleExpiryReminder(for: updated)
     }
 
-    /// Removes a medicine from memory, saves the changed list to disk, and cancels its notification.
+    /// Removes a medicine from memory, saves the changed list to disk, cancels its
+    /// notification, and deletes its stored photo.
     ///
     /// The previous list is restored if disk writing fails. This avoids a confusing state
     /// where the UI hides a medicine but the saved JSON file still contains it.
@@ -143,6 +174,7 @@ final class MedicineStore {
         }
 
         await notificationScheduler.cancelReminder(for: medicine.id)
+        await imageStore.deleteImage(for: medicine.id)
     }
 
     /// Converts the medicines into JSON data.
@@ -165,6 +197,12 @@ final class MedicineStore {
         }
         for medicine in previous {
             await notificationScheduler.cancelReminder(for: medicine.id)
+        }
+        // Photos are device-local attachments keyed by medicine ID. Remove them only for
+        // medicines that are gone after the import, so restoring a backup on the same
+        // device keeps the photos of medicines that survived.
+        for medicine in previous where !medicines.contains(where: { $0.id == medicine.id }) {
+            await imageStore.deleteImage(for: medicine.id)
         }
         for medicine in medicines {
             try? await notificationScheduler.scheduleExpiryReminder(for: medicine)
@@ -194,7 +232,6 @@ final class MedicineStore {
     /// damaged, the app also starts empty instead of crashing.
     private func loadFromDisk() {
         guard let storageURL, FileManager.default.fileExists(atPath: storageURL.path) else {
-            medicines = []
             return
         }
 
@@ -247,9 +284,8 @@ final class MedicineStore {
 
 /// A shareable backup of every saved medicine.
 ///
-/// `Transferable` lets SwiftUI's `ShareLink` hand this to the iOS share sheet. The file
-/// is written lazily, only when the user actually picks a share destination, and is a
-/// plain JSON file so it can be AirDropped to another iPhone or kept in Files.
+/// Written lazily — only when the user picks a share destination — so the encode cost
+/// is paid at share time, not on every tap of the Export button.
 struct MedicineBackupFile: Transferable {
     let data: Data
 
@@ -258,6 +294,12 @@ struct MedicineBackupFile: Transferable {
             let url = FileManager.default.temporaryDirectory
                 .appendingPathComponent(fileName())
             try backup.data.write(to: url, options: [.atomic])
+            // Match the protection level of the on-disk store so the file cannot be
+            // read from the temp directory while the device is locked.
+            try FileManager.default.setAttributes(
+                [.protectionKey: FileProtectionType.complete],
+                ofItemAtPath: url.path
+            )
             return SentTransferredFile(url)
         }
     }
