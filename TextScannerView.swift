@@ -1,7 +1,5 @@
-import SwiftUI
-
-#if os(iOS) && canImport(VisionKit)
 import AVFoundation
+import SwiftUI
 import Vision
 import VisionKit
 
@@ -547,18 +545,8 @@ private final class ScannerHostViewController: UIViewController {
         }
     }
 
-    /// Checks the app's camera setup and requests permission if needed.
-    ///
-    /// The app must have `NSCameraUsageDescription` in its Info settings or iOS will not
-    /// allow camera access. After permission is granted, this method starts the scanner.
+    /// Checks camera availability and requests permission if needed.
     private func configureCameraAccess() {
-        guard Bundle.main.object(forInfoDictionaryKey: "NSCameraUsageDescription") != nil else {
-            showUnavailable(
-                "Camera permission text is missing. Add Privacy - Camera Usage Description to the app target Info settings, then reinstall the app."
-            )
-            return
-        }
-
         guard DataScannerViewController.isSupported else {
             showUnavailable("Live text scanning is not supported on this device.")
             return
@@ -922,24 +910,3 @@ private enum ScannerPalette {
     static let blue = PillEyePalette.blue
     static let ink = PillEyePalette.ink
 }
-#else
-/// Fallback scanner view for platforms where VisionKit is not available.
-struct TextScannerView: View {
-    let title: String
-    let instructions: String
-    let captureMode: TextScannerCaptureMode
-    let onConfirm: ([String]) -> Void
-    let onClose: () -> Void
-
-    /// Shows a simple unsupported-platform message.
-    var body: some View {
-        VStack(spacing: 16) {
-            Text("Camera text scanning is only available on supported iOS devices.")
-                .multilineTextAlignment(.center)
-            Button("Close", action: onClose)
-                .buttonStyle(DimensionalButtonStyle(fill: .blue, minHeight: 42))
-        }
-        .padding()
-    }
-}
-#endif

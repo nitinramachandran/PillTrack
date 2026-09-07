@@ -38,4 +38,61 @@ final class Medicine_Date_AlerterUITests: XCTestCase {
             XCUIApplication().launch()
         }
     }
+
+    // MARK: - App Store Screenshots
+
+    /// Captures App Store screenshots: add form, Saved Medicines list, and full-size photo viewer.
+    ///
+    /// Run against the iPhone 17 Pro Max simulator with pre-seeded demo data. Screenshots are
+    /// saved as test attachments in the xcresult bundle and extracted afterwards.
+    @MainActor
+    func testAppStoreScreenshots() throws {
+        let app = XCUIApplication()
+        app.launch()
+
+        // Wait for the app to fully render
+        let savedButton = app.buttons["savedMedicinesButton"]
+        XCTAssertTrue(savedButton.waitForExistence(timeout: 5))
+
+        // Screenshot 1: Add form with "Add photo" button
+        saveScreenshot("01-add-form-photo-button", from: app)
+
+        // Open Saved Medicines sheet
+        savedButton.tap()
+
+        // Wait for the list to appear
+        let doneButton = app.buttons["savedMedicinesDoneButton"]
+        XCTAssertTrue(doneButton.waitForExistence(timeout: 5))
+
+        // Screenshot 2: Saved Medicines list (Expiring filter — default)
+        saveScreenshot("02-saved-medicines-list", from: app)
+
+        // Switch to "All" filter to see the thumbnail and add-photo button together
+        let allFilter = app.buttons["filterAll"]
+        if allFilter.exists { allFilter.tap() }
+        Thread.sleep(forTimeInterval: 0.5)
+        saveScreenshot("02b-saved-medicines-all", from: app)
+
+        // Tap the thumbnail to open the full-size photo viewer
+        let thumbnail = app.buttons["medicinePhotoThumbnail"].firstMatch
+        if thumbnail.exists {
+            thumbnail.tap()
+            Thread.sleep(forTimeInterval: 0.5)
+            // Screenshot 3: Full-size photo viewer
+            saveScreenshot("03-full-size-photo-viewer", from: app)
+
+            // Dismiss the viewer
+            let viewerDone = app.buttons["expandedPhotoDoneButton"]
+            if viewerDone.exists { viewerDone.tap() }
+        }
+    }
+
+    @MainActor
+    private func saveScreenshot(_ name: String, from app: XCUIApplication) {
+        let screenshot = app.screenshot()
+        let attachment = XCTAttachment(screenshot: screenshot)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
 }

@@ -23,6 +23,7 @@ struct ContentView: View {
     @State private var showingPhotoOptions = false
     @State private var showingCameraCapture = false
     @State private var showingPhotoLibrary = false
+    @State private var showingCameraUnavailableAlert = false
     @State private var photoPickerItem: PhotosPickerItem?
     @State private var showingBackupImporter = false
     @State private var pendingImportData: Data?
@@ -731,15 +732,22 @@ struct ContentView: View {
             }
         }
         .confirmationDialog("Medicine photo", isPresented: $showingPhotoOptions) {
-            if CameraPhotoPicker.isCameraAvailable {
-                Button("Take Photo") {
+            Button("Take Photo") {
+                if CameraPhotoPicker.isCameraAvailable {
                     showingCameraCapture = true
+                } else {
+                    showingCameraUnavailableAlert = true
                 }
             }
             Button("Choose From Library") {
                 showingPhotoLibrary = true
             }
             Button("Cancel", role: .cancel) {}
+        }
+        .alert("Camera Unavailable", isPresented: $showingCameraUnavailableAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("This device does not have an available camera. You can still attach a photo by choosing from your library.")
         }
     }
 

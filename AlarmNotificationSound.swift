@@ -11,13 +11,10 @@ enum AlarmNotificationSound {
     private static let customSoundResourceName = "alarm"
     private static let customSoundFileName = "alarm.caf"
 
-    /// Returns the custom alarm sound when it is bundled, otherwise the system default.
+    /// Returns the custom alarm sound (iOS silently falls back to the default sound if the
+    /// file is absent, so no bundle probe is needed).
     static var sound: UNNotificationSound {
-        guard Bundle.main.url(forResource: customSoundResourceName, withExtension: "caf") != nil else {
-            return .default
-        }
-
-        return UNNotificationSound(named: UNNotificationSoundName(customSoundFileName))
+        UNNotificationSound(named: UNNotificationSoundName(customSoundFileName))
     }
 
     /// Marks a notification as time-sensitive so iOS treats it as more urgent.

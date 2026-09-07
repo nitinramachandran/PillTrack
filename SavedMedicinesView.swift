@@ -85,6 +85,7 @@ struct SavedMedicinesView: View {
     @State private var showingPhotoSourceOptions = false
     @State private var showingCameraCapture = false
     @State private var showingPhotoLibrary = false
+    @State private var showingCameraUnavailableAlert = false
     @State private var photoPickerItem: PhotosPickerItem?
 
     /// Medicines matching the currently selected filter.
@@ -129,9 +130,11 @@ struct SavedMedicinesView: View {
                 "Add photo for \(photoTargetMedicine?.name ?? "medicine")",
                 isPresented: $showingPhotoSourceOptions
             ) {
-                if CameraPhotoPicker.isCameraAvailable {
-                    Button("Take Photo") {
+                Button("Take Photo") {
+                    if CameraPhotoPicker.isCameraAvailable {
                         showingCameraCapture = true
+                    } else {
+                        showingCameraUnavailableAlert = true
                     }
                 }
                 Button("Choose From Library") {
@@ -140,6 +143,11 @@ struct SavedMedicinesView: View {
                 Button("Cancel", role: .cancel) {
                     photoTargetMedicine = nil
                 }
+            }
+            .alert("Camera Unavailable", isPresented: $showingCameraUnavailableAlert) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("This device does not have an available camera. You can still attach a photo by choosing from your library.")
             }
             .sheet(isPresented: $showingCameraCapture) {
                 CameraPhotoPicker(
