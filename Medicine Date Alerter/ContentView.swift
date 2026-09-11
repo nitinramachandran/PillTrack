@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 
 /// The main screen of the app.
 struct ContentView: View {
+    @AppStorage("hasSeenCameraOnboarding") private var hasSeenOnboarding = false
     @State private var store: MedicineStore
     @State private var medicineName = ""
     @State private var manufacturingDate: Date?
@@ -273,6 +274,11 @@ struct ContentView: View {
             }
             .task { await store.load() }
             .task { await listenForNotificationTaps() }
+        }
+        .overlay {
+            if !hasSeenOnboarding {
+                cameraOnboardingOverlay
+            }
         }
         .preferredColorScheme(.light)
     }
@@ -965,6 +971,51 @@ struct ContentView: View {
         expiryDate = date
         revalidateDateOrder()
         activeDateField = .manufacturing
+    }
+
+    /// Full-screen overlay shown once on first launch explaining the camera scanning feature.
+    private var cameraOnboardingOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.40)
+                .ignoresSafeArea()
+
+            VStack(spacing: 20) {
+                Image(systemName: "camera.viewfinder")
+                    .font(.system(size: 52, weight: .light))
+                    .foregroundStyle(PillEyePalette.teal)
+
+                VStack(spacing: 8) {
+                    Text("Capture Labels with Your Camera")
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(PillEyePalette.deepTeal)
+                        .multilineTextAlignment(.center)
+
+                    Text("PillEye uses your device's back camera to read medicine names and dates directly from the label. Tap a camera button, point at the text, select what you need, and the field fills in automatically — no typing required.")
+                        .font(.subheadline)
+                        .foregroundStyle(PillEyePalette.ink.opacity(0.80))
+                        .multilineTextAlignment(.center)
+                        .lineSpacing(3)
+                }
+
+                Button {
+                    hasSeenOnboarding = true
+                } label: {
+                    Text("Get Started")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(DimensionalButtonStyle(fill: PillEyePalette.teal, minHeight: 46))
+                .accessibilityIdentifier("onboardingGetStartedButton")
+            }
+            .padding(24)
+            .frame(maxWidth: 340)
+            .background(PillEyePalette.popupBackground, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .stroke(PillEyePalette.mint, lineWidth: 2)
+            }
+            .shadow(color: PillEyePalette.deepTeal.opacity(0.28), radius: 24, x: 0, y: 12)
+            .fontDesign(.rounded)
+        }
     }
 
 }
